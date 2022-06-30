@@ -6,9 +6,9 @@
 
 // Plugin Information, used in dllmain.cpp for register plugin
 static_assert(false, "Please modify your plugin registration details and delete this line");
-#define PLUGIN_NAME                 "PluginName"
-#define PLUGIN_INTRODUCTION         "Introduction"
-#define PLUGIN_AUTHOR               "AuthorName"
+#define PLUGIN_NAME                 "nbtcmd"
+#define PLUGIN_INTRODUCTION         "nbt"
+#define PLUGIN_AUTHOR               "killcerr"
 #define PLUGIN_VERSION_MAJOR        1
 #define PLUGIN_VERSION_MINOR        0
 #define PLUGIN_VERSION_REVISION     0
