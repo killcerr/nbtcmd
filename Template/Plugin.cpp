@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "Version.h"
 #include <EventAPI.h>
 #include <LoggerAPI.h>
 #include <MC/Level.hpp>
