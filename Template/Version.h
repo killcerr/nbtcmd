@@ -5,7 +5,6 @@
 #define PLUGIN_VERSION_RELEASE 2
 
 // Plugin Information, used in dllmain.cpp for register plugin
-static_assert(false, "Please modify your plugin registration details and delete this line");
 #define PLUGIN_NAME                 "nbtcmd"
 #define PLUGIN_INTRODUCTION         "nbt"
 #define PLUGIN_AUTHOR               "killcerr"
