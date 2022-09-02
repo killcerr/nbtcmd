@@ -130,7 +130,7 @@ public :
 	static void setup(CommandRegistry* registry)
 	{
 		using namespace RegisterCommandHelper;
-		registry->registerCommand("nbt", "nbt", CommandPermissionLevel::Admin, { (CommandFlagValue)0 }, { (CommandFlagValue)0x80 });
+		registry->registerCommand("nbt", "nbt", CommandPermissionLevel::Any, { (CommandFlagValue)0 }, { (CommandFlagValue)0x80 });
 		//registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::selector, "target:target", &NbtCommand::mobIsSet));
 		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::selector, "target:target", &NbtCommand::mobIsSet), makeOptional(&NbtCommand::nbt,"nbt:string",&NbtCommand::nbtIsSet));
 		//registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::blockPos, "blockPos:block", &NbtCommand::blockPosIsSet));
