@@ -44,7 +44,7 @@
 #include <MC/BlockVolumeTarget.hpp>
 #include <MC/Biome.hpp>
 
-Logger logger(PLUGIN_NAME);
+Logger logger("nbt cmd");
 
 inline void CheckProtocolVersion() {
 #ifdef TARGET_BDS_PROTOCOL_VERSION
@@ -61,14 +61,12 @@ inline void CheckProtocolVersion() {
 class NbtCommand : public Command
 {
 	bool modeIsSet;
-	CommandSelector<Mob> selector; 
+	CommandSelector<Actor> selector; 
 	bool mobIsSet;
 	string nbt;
 	bool nbtIsSet;
-	BlockPos blockPos;
+	CommandPosition blockPos;
 	bool blockPosIsSet;
-	string structPath;
-	bool structPathIsSet;
 public :
 	void execute(CommandOrigin const& ori, CommandOutput& output) const override
 	{
@@ -79,8 +77,7 @@ public :
 				auto mobs = selector.results(ori);
 				for (auto mob : mobs)
 				{
-					CompoundTag* compoundTag = &*CompoundTag::fromSNBT(nbt);
-					mob->setNbt(compoundTag);
+					mob->setNbt(CompoundTag::fromSNBT(nbt).get());
 				}
 				output.success(std::to_string(mobs.count()) + " nbt:" + nbt);
 				return;
@@ -90,7 +87,7 @@ public :
 				auto mobs = selector.results(ori);
 				for (auto mob : mobs)
 				{
-					output.success("type:" + mob->getTypeName() + " nametag:" + mob->getNameTag() + " nbt:" + mob->getNbt()->toSNBT());
+					output.addMessage("type:" + mob->getTypeName() + " nametag:" + mob->getNameTag() + " nbt:" + mob->getNbt()->toSNBT());
 				}
 				return;
 			}
@@ -101,9 +98,8 @@ public :
 			{
 				if (ori.getPlayer()->isPlayer())
 				{
-					auto block = Level::getBlock(blockPos, ori.getPlayer()->getDimensionId());
-					CompoundTag* compoundTag = &*CompoundTag::fromSNBT(nbt);
-					block->setNbt(compoundTag);
+					auto block = Level::getBlock(blockPos.getBlockPos(ori, Vec3()), ori.getPlayer()->getDimensionId());
+					block->setNbt(CompoundTag::fromSNBT(nbt).get());
 					output.success("type:" + block->getTypeName() + " nbt:" + nbt);
 					return;
 				}
@@ -116,7 +112,7 @@ public :
 			{
 				if (ori.getPlayer()->isPlayer())
 				{
-					auto block = Level::getBlock(blockPos, ori.getPlayer()->getDimensionId());
+					auto block = Level::getBlock(blockPos.getBlockPos(ori, Vec3()), ori.getPlayer()->getDimensionId());
 					output.success("type:" + block->getTypeName() + " nbt:" + block->getNbt()->toSNBT());
 					return;
 				}
@@ -124,17 +120,6 @@ public :
 				{
 					output.error("not player");
 				}
-			}
-		}
-		else if (structPathIsSet)
-		{
-			if (nbtIsSet)
-			{
-
-			}
-			else
-			{
-
 			}
 		}
 		else
@@ -146,12 +131,10 @@ public :
 	{
 		using namespace RegisterCommandHelper;
 		registry->registerCommand("nbt", "nbt", CommandPermissionLevel::Admin, { (CommandFlagValue)0 }, { (CommandFlagValue)0x80 });
-		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::selector, "target:target", &NbtCommand::mobIsSet));
+		//registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::selector, "target:target", &NbtCommand::mobIsSet));
 		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::selector, "target:target", &NbtCommand::mobIsSet), makeOptional(&NbtCommand::nbt,"nbt:string",&NbtCommand::nbtIsSet));
-		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::blockPos, "blockPos:block", &NbtCommand::blockPosIsSet));
+		//registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::blockPos, "blockPos:block", &NbtCommand::blockPosIsSet));
 		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::blockPos, "blockPos:block", &NbtCommand::blockPosIsSet), makeOptional(&NbtCommand::nbt, "nbt:string", &NbtCommand::nbtIsSet));
-		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::structPath, "string:structPath", &NbtCommand::structPathIsSet));
-		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::structPath, "string:structPath", &NbtCommand::structPathIsSet), makeOptional(&NbtCommand::nbt, "nbt:string", &NbtCommand::nbtIsSet));
 	}
 };
 
