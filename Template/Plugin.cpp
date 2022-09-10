@@ -271,6 +271,7 @@ class NewNbtCmd :public Command
 public:
 	void execute(CommandOrigin const& ori, CommandOutput& output) const override
 	{
+
 		if (!ori.getPlayer()->isPlayer() || ori.getPlayer()->isOP())
 		{
 			string snbt;
@@ -296,14 +297,36 @@ public:
 				output.error("commands.stats.failed");
 				return;
 			}
-			if (fromActorIsSet && fromActor.results(ori).count() > 1)
+			//fix crash
+			if ((toActorIsSet || toBlockIsSet) && (fromActorIsSet && fromActor.results(ori).count() > 1))
 			{
 				output.error("commands.stats.failed");
 				return;
 			}
+			else if (fromActorIsSet && snbt.size() > 2)
+			{
+				string temp;
+				for (size_t i = 2; i < snbt.size() - 1; i++)
+				{
+					temp += snbt[i];
+				}
+				snbt = temp;
+			}
+			if (toActorIsSet && ori.getPermissionsLevel() == 4)
+			{
+				for (auto actor : toActor.results(ori))
+				{
+					if (actor->getUniqueID() == ori.getUUID())
+					{
+						output.error("commands.stats.failed");
+						return;
+					}
+				}
+			}
+
 			if (toBlockIsSet)
 			{
-				to(snbt, output, toBlock.getBlockPos(ori, Vec3()), ori.getDimension()->getDimensionId());
+					to(snbt, output, toBlock.getBlockPos(ori, Vec3()), ori.getDimension()->getDimensionId());
 			}
 			else if (toActorIsSet)
 			{
@@ -318,6 +341,7 @@ public:
 			{
 				output.success(snbt);
 			}
+			
 		}
 	}
 	static void setup(CommandRegistry* registry)
