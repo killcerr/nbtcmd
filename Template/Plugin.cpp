@@ -217,7 +217,7 @@ class NewNbtCmd :public Command
 	CommandPosition toBlock;
 	string fromPath;
 	string toPath;
-	json fromJson;
+	//json fromJson;
 	bool modeIsSet, fromActorIsSet, toActorIsSet, fromBlockIsSet, toBlockIsSet, fromPathIsSet, toPathIsSet, fromJsonIsSet;
 	static string from(string path)
 	{
@@ -242,11 +242,11 @@ class NewNbtCmd :public Command
 		}
 		return result;
 	}
-	static string from(json snbt)
+	/*static string from(json snbt)
 	{
 		return string(snbt);
 	
-	}
+	}*/
 	static void to(string snbt, CommandOutput& output, string path)
 	{
 		asyncFileOut(path, snbt, std::ios_base::app);
@@ -289,7 +289,7 @@ public:
 			}
 			else if (fromJsonIsSet)
 			{
-				snbt = from(fromJson);
+				//snbt = from(fromJson);
 			}
 			else
 			{
