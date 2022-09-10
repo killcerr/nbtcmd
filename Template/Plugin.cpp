@@ -10,39 +10,22 @@
 #include <MC/Player.hpp>
 #include <MC/ItemStack.hpp>
 #include <LLAPI.h>
-#include <MC/OverworldGenerator.hpp>
 #include <MC/Dimension.hpp>
-#include <MC/NetherDimension.hpp>
-#include <MC/OverworldDimension.hpp>
-#include <MC/TheEndDimension.hpp>
-#include <MC/NetherGenerator.hpp>
-#include <MC/OverworldGenerator.hpp>
-#include <MC/TheEndGenerator.hpp>
-#include <MC/WorldGenerator.hpp>
-#include <MC/VanillaDimensions.hpp>
-#include <MC/VanillaFeatures.hpp>
-#include <MC/Feature.hpp>
-#include <MC/FeatureHelper.hpp>
-#include <MC/FeatureRegistry.hpp>
 #include <ctime>
 #include <HookAPI.h>
 #include <MC/Dimension.hpp>
-#include <MC/BiomeRegistry.hpp>
-#include <thread>
 #include <MC/Mob.hpp>
-#include <MC/Monster.hpp>
 #include <MC/Player.hpp>
-#include <MC/Village.hpp>
 #include <ScheduleAPI.h>
 #include <RegCommandAPI.h>
-#include <MC/ITreeFeature.hpp>
-#include <MC/CaveFeatureUtils.hpp>
-#include <MC/CaveFeature.hpp>
-#include <MC/BlockPosIterator.hpp>
 #include <MC/ServerPlayer.hpp>
 #include <RegCommandAPI.h>
-#include <MC/BlockVolumeTarget.hpp>
-#include <MC/Biome.hpp>
+#include <MC/Packet.hpp>
+#include <MC/SetActorDataPacket.hpp>
+#include <MC/BlockActorDataPacket.hpp>
+#include <MC/CommandOrigin.hpp>
+#include <future>
+#include <stdexcept>
 
 Logger logger("nbt cmd");
 
@@ -58,83 +41,322 @@ inline void CheckProtocolVersion() {
 #endif // TARGET_BDS_PROTOCOL_VERSION
 }
 
+auto asyncFileOut(const string fileName, const string content, const int prot)
+{
+	(void)std::async(std::launch::async, [](string fileName, string content, int prot) {
+		std::ofstream fout;
+		fout.open(fileName, prot);
+		if (fout.is_open())
+		{
+			fout.write(content.c_str(), content.length());
+		}
+		else
+		{
+			throw  std::runtime_error("open error");
+		}
+		}, fileName, content, prot);
+}
+auto asyncFileIn(const string path)
+{
+	auto result = std::async(std::launch::async, [](const string path) {
+		std::ifstream fin;
+		fin.open(path, std::ios_base::in);
+		string str;
+		if (fin.is_open())
+		{
+			string temp;
+			while (fin >> temp)
+			{
+				str += temp;
+			}
+			return str;
+		}
+		else
+		{
+			throw  std::runtime_error("open error");
+		}
+		}, path);
+	return result;
+}
 class NbtCommand : public Command
 {
-	bool modeIsSet;
 	CommandSelector<Actor> selector; 
-	bool mobIsSet;
+	bool actorIsSet;
 	string nbt;
 	bool nbtIsSet;
 	CommandPosition blockPos;
 	bool blockPosIsSet;
+	enum TargetType :int
+	{
+		block = 0,
+		actor = 1,
+		item = 2
+	}targetType;
+	bool targetTypeIsSet;
 public :
 	void execute(CommandOrigin const& ori, CommandOutput& output) const override
 	{
-		if (mobIsSet)
+		if ((ori.getPlayer()->isPlayer() && ori.getPlayer()->isOP()) || !ori.getPlayer()->isPlayer())
 		{
-			if (nbtIsSet)
+			if (targetTypeIsSet)
 			{
-				auto mobs = selector.results(ori);
-				for (auto mob : mobs)
+				switch (targetType)
 				{
-					mob->setNbt(CompoundTag::fromSNBT(nbt).get());
+				case NbtCommand::block:
+					{
+						if (blockPosIsSet)
+						{
+							auto block = ori.getPlayer()->isPlayer() ? ori.getPlayer()->getLevel().getBlock(blockPos.getBlockPos(Vec3(), Vec3()), ori.getPlayer()->getDimensionId()) : Global<Level>->getBlock(blockPos.getBlockPos(Vec3(), Vec3()), 0);
+							if (nbtIsSet)
+							{
+								block->setNbt(CompoundTag::fromSNBT(nbt).get());
+								for (auto player : Global<Level>->getAllPlayers())
+								{
+									player->sendUpdateBlockPacket(blockPos.getBlockPos(ori, Vec3()), *block);
+								}
+							}
+							else
+							{
+								output.success(block->getNbt()->toSNBT());
+							}
+						}
+						else
+						{
+							output.error("commands.stats.failed");
+						}
+						break;
+					}
+				case NbtCommand::actor:
+					{
+						if (actorIsSet)
+						{
+							if (nbtIsSet)
+							{
+								int count = 0;
+								for (auto actor : selector.results(ori))
+								{
+									actor->setNbt(CompoundTag::fromSNBT(nbt).get());
+									count++;
+								}
+								output.success("count:" + std::to_string(count));
+							}
+							else
+							{
+								int count = 0;
+								for (auto actor : selector.results(ori))
+								{
+									output.addMessage(actor->getNbt()->toSNBT());
+									count++;
+								}
+								output.success("count:" + std::to_string(count));
+							}
+						}
+						else
+						{
+							output.error("commands.stats.failed");
+						}
+						break;
+					}
+				case NbtCommand::item:
+					{
+						if (actorIsSet)
+						{
+							if (nbtIsSet)
+							{
+								int count = 0;
+								for (auto actor : selector.results(ori))
+								{
+									auto itemStack = ItemStack();
+									itemStack.setNbt(CompoundTag::fromSNBT(nbt).get());
+									actor->add(itemStack);
+									count++;
+								}
+
+							}
+							else
+							{
+								output.error("Can't read item nbt");
+							}
+						}
+						else
+						{
+							output.error("commands.stats.failed");
+						}
+						break;
+					}
+				default:
+					{
+						output.error("commands.stats.failed");
+						break;
+					}
 				}
-				output.success(std::to_string(mobs.count()) + " nbt:" + nbt);
-				return;
 			}
 			else
 			{
-				auto mobs = selector.results(ori);
-				for (auto mob : mobs)
-				{
-					output.addMessage("type:" + mob->getTypeName() + " nametag:" + mob->getNameTag() + " nbt:" + mob->getNbt()->toSNBT());
-				}
-				return;
+				output.error("commands.stats.failed");
 			}
-		}
-		else if (blockPosIsSet)
-		{
-			if (nbtIsSet)
-			{
-				if (ori.getPlayer()->isPlayer())
-				{
-					auto block = Level::getBlock(blockPos.getBlockPos(ori, Vec3()), ori.getPlayer()->getDimensionId());
-					block->setNbt(CompoundTag::fromSNBT(nbt).get());
-					output.success("type:" + block->getTypeName() + " nbt:" + nbt);
-					return;
-				}
-				else
-				{
-					output.error("not player");
-				}
-			}
-			else
-			{
-				if (ori.getPlayer()->isPlayer())
-				{
-					auto block = Level::getBlock(blockPos.getBlockPos(ori, Vec3()), ori.getPlayer()->getDimensionId());
-					output.success("type:" + block->getTypeName() + " nbt:" + block->getNbt()->toSNBT());
-					return;
-				}
-				else
-				{
-					output.error("not player");
-				}
-			}
-		}
-		else
-		{
-			output.error("commands.stats.failed");
 		}
 	}
 	static void setup(CommandRegistry* registry)
 	{
 		using namespace RegisterCommandHelper;
 		registry->registerCommand("nbt", "nbt", CommandPermissionLevel::Any, { (CommandFlagValue)0 }, { (CommandFlagValue)0x80 });
-		//registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::selector, "target:target", &NbtCommand::mobIsSet));
-		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::selector, "target:target", &NbtCommand::mobIsSet), makeOptional(&NbtCommand::nbt,"nbt:string",&NbtCommand::nbtIsSet));
-		//registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::blockPos, "blockPos:block", &NbtCommand::blockPosIsSet));
-		registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::blockPos, "blockPos:block", &NbtCommand::blockPosIsSet), makeOptional(&NbtCommand::nbt, "nbt:string", &NbtCommand::nbtIsSet));
+		//registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::selector, "target", &NbtCommand::actorIsSet), makeOptional(&NbtCommand::nbt,"snbt",&NbtCommand::nbtIsSet));
+		//registry->registerOverload<NbtCommand>("nbt", makeOptional(&NbtCommand::blockPos, "block", &NbtCommand::blockPosIsSet), makeOptional(&NbtCommand::nbt, "snbt", &NbtCommand::nbtIsSet));
+		registry->addEnum<NbtCommand::TargetType>("targettype", { {"actor",NbtCommand::TargetType::actor},{"block",NbtCommand::TargetType::block},{"item",NbtCommand::TargetType::item} });
+		registry->registerOverload<NbtCommand>("nbt", makeMandatory<NbtCommand, NbtCommand::TargetType>(&NbtCommand::targetType, "targettype", &NbtCommand::targetTypeIsSet), makeOptional(&NbtCommand::selector, "target", &NbtCommand::actorIsSet), makeOptional(&NbtCommand::nbt, "snbt", &NbtCommand::nbtIsSet));
+		registry->registerOverload<NbtCommand>("nbt", makeMandatory<NbtCommand, NbtCommand::TargetType>(&NbtCommand::targetType, "targettype", &NbtCommand::targetTypeIsSet), makeOptional(&NbtCommand::blockPos, "block", &NbtCommand::blockPosIsSet), makeOptional(&NbtCommand::nbt, "snbt", &NbtCommand::nbtIsSet));
+	}
+};
+
+class NewNbtCmd :public Command
+{
+	CommandSelector<Actor> fromActor;
+	CommandSelector<Actor> toActor;
+	CommandPosition fromBlock;
+	CommandPosition toBlock;
+	string fromPath;
+	string toPath;
+	json fromJson;
+	bool modeIsSet, fromActorIsSet, toActorIsSet, fromBlockIsSet, toBlockIsSet, fromPathIsSet, toPathIsSet, fromJsonIsSet;
+	static string from(string path)
+	{
+		auto file = asyncFileIn(path);
+		return file.get();
+	}
+	static string from(BlockPos pos,int dim)
+	{
+		return Global<Level>->getBlock(pos, dim)->getNbt()->toSNBT();
+	}
+	static string from(std::vector<Actor*> actors)
+	{
+		string result;
+		int count = 0;
+		for (auto actor : actors)
+		{
+			result += fmt::to_string(count);
+			result += ":";
+			result += actor->getNbt()->toSNBT();
+			result += "\n";
+			count++;
+		}
+		return result;
+	}
+	static string from(json snbt)
+	{
+		return string(snbt);
+	
+	}
+	static void to(string snbt, CommandOutput& output, string path)
+	{
+		asyncFileOut(path, snbt, std::ios_base::app);
+		output.success("save in " + path);
+	}
+	static void to(string snbt, CommandOutput& output, std::vector<Actor*> actors)
+	{
+		int count = 0;
+		auto nbt = CompoundTag::fromSNBT(snbt);
+		for (auto actor : actors)
+		{
+			nbt->setActor(actor);
+			count++;
+		}
+		output.success(fmt::to_string(count));
+	}
+	static void to(string snbt, CommandOutput& output, BlockPos pos, int dim)
+	{
+		auto nbt = CompoundTag::fromSNBT(snbt);
+		nbt->setBlock(Global<Level>->getBlock(pos, dim));
+	}
+public:
+	void execute(CommandOrigin const& ori, CommandOutput& output) const override
+	{
+		if (!ori.getPlayer()->isPlayer() || ori.getPlayer()->isOP())
+		{
+			string snbt;
+			if (fromBlockIsSet)
+			{
+				from(fromBlock.getBlockPos(ori, Vec3()), ori.getDimension()->getDimensionId());
+			}
+			else if (fromActorIsSet)
+			{
+				auto result = fromActor.results(ori);
+				snbt = from(*result.data);
+			}
+			else if (fromPathIsSet)
+			{
+				snbt = from(fromPath);
+			}
+			else if (fromJsonIsSet)
+			{
+				snbt = from(fromJson);
+			}
+			else
+			{
+				output.error("commands.stats.failed");
+				return;
+			}
+			if (fromActorIsSet && fromActor.results(ori).count() > 1)
+			{
+				output.error("commands.stats.failed");
+				return;
+			}
+			if (toBlockIsSet)
+			{
+				to(snbt, output, toBlock.getBlockPos(ori, Vec3()), ori.getDimension()->getDimensionId());
+			}
+			else if (toActorIsSet)
+			{
+				auto result = fromActor.results(ori);
+				to(snbt, output, *result.data);
+			}
+			else if (toPathIsSet)
+			{
+				to(snbt, output, toPath);
+			}
+			else
+			{
+				output.success(snbt);
+			}
+		}
+	}
+	static void setup(CommandRegistry* registry)
+	{
+		using namespace RegisterCommandHelper;
+		registry->registerCommand("nbt", "nbt", CommandPermissionLevel::Any, { (CommandFlagValue)0 }, { (CommandFlagValue)0x80 });
+		//from actor
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromActor, "from", &NewNbtCmd::fromActorIsSet), makeOptional(&NewNbtCmd::toActor, "to", &NewNbtCmd::toActorIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromActor, "from", &NewNbtCmd::fromActorIsSet), makeOptional(&NewNbtCmd::toBlock, "to", &NewNbtCmd::toBlockIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromActor, "from", &NewNbtCmd::fromActorIsSet), makeOptional(&NewNbtCmd::toPath, "to", &NewNbtCmd::toPathIsSet));
+		
+
+		//from block
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromBlock, "from", &NewNbtCmd::fromBlockIsSet), makeOptional(&NewNbtCmd::toActor, "to", &NewNbtCmd::toActorIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromBlock, "from", &NewNbtCmd::fromBlockIsSet), makeOptional(&NewNbtCmd::toBlock, "to", &NewNbtCmd::toBlockIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromBlock, "from", &NewNbtCmd::fromBlockIsSet), makeOptional(&NewNbtCmd::toPath, "to", &NewNbtCmd::toPathIsSet));
+		
+
+		//from path
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromPath, "from", &NewNbtCmd::fromPathIsSet), makeOptional(&NewNbtCmd::toActor, "to", &NewNbtCmd::toActorIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromPath, "from", &NewNbtCmd::fromPathIsSet), makeOptional(&NewNbtCmd::toBlock, "to", &NewNbtCmd::toBlockIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromPath, "from", &NewNbtCmd::fromPathIsSet), makeOptional(&NewNbtCmd::toPath, "to", &NewNbtCmd::toPathIsSet));
+	}
+};
+
+class SNbtSyntaxHighlightingCommand : public Command
+{
+	std::string syntaxHighlightingMode;
+	bool syntaxHighlightingModeIsSet;
+public:
+	void execute(CommandOrigin const& ori, CommandOutput& output) const override
+	{
+
+	}
+	static void setup(CommandRegistry* registry)
+	{
+		using namespace RegisterCommandHelper;
+		registry->registerCommand("snbtsyntaxhighlighting", "snbt syntaxh highlighting", CommandPermissionLevel::Any, { (CommandFlagValue)0 }, { (CommandFlagValue)0x80 });
+		registry->registerOverload<SNbtSyntaxHighlightingCommand>("snbtsyntaxhighlighting", makeOptional<SNbtSyntaxHighlightingCommand>(&SNbtSyntaxHighlightingCommand::syntaxHighlightingMode, "syntaxhighlightingmode", &SNbtSyntaxHighlightingCommand::syntaxHighlightingModeIsSet));
 	}
 };
 
@@ -147,7 +369,7 @@ void PluginInit()
 	logger.setFile("./logs/nbtcmd.logs/"+std::to_string(localDate->tm_year+ 1900)+"."+ std::to_string(localDate->tm_mon) + "."+ std::to_string(localDate->tm_wday) + " "+ std::to_string(localDate->tm_hour) + ":"+ std::to_string(localDate->tm_min) + ":"+std::to_string(localDate->tm_sec));
 	logger.info("nbtcmd loaded");
     Event::RegCmdEvent::subscribe([](Event::RegCmdEvent regCmdEvent) {
-		NbtCommand::setup(regCmdEvent.mCommandRegistry);
+		NewNbtCmd::setup(regCmdEvent.mCommandRegistry);
 		return true;
 		});
 }
