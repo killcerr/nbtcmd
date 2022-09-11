@@ -1,8 +1,10 @@
 # nbtcmd
-a plugin for nbt
-# nbt command
-## exmple:
-### 1.nbt selector //show mob nbt
-### 2.nbt selector nbt //set mob nbt
-### 3.nbt pos //show block nbt
-### 4.nbt pos nbt //set block nbt
+edit nbt in game
+# Usage
+## command format
+  #### nbt from to
+  #### from,to(path,):
+  string:read/write file(snbt)
+  CommandSelector<Actor>:read/write nbt from/to actor(cannot write nbt from actors)
+  CommandPosition:read/write nbt from/to block(cannot write nbt from actors)
+  solt CommandSelector<Player>:read/write nbt from/to item(cannot write nbt from actors)
