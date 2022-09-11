@@ -209,7 +209,7 @@ public :
 		registry->registerOverload<NbtCommand>("nbt", makeMandatory<NbtCommand, NbtCommand::TargetType>(&NbtCommand::targetType, "targettype", &NbtCommand::targetTypeIsSet), makeOptional(&NbtCommand::blockPos, "block", &NbtCommand::blockPosIsSet), makeOptional(&NbtCommand::nbt, "snbt", &NbtCommand::nbtIsSet));
 	}
 };
-using json = basic_json<>;
+//using json = basic_json<>;
 class NewNbtCmd :public Command
 {
 	CommandSelector<Actor> fromActor;
