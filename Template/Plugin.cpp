@@ -24,6 +24,7 @@
 #include <MC/SetActorDataPacket.hpp>
 #include <MC/BlockActorDataPacket.hpp>
 #include <MC/CommandOrigin.hpp>
+#include <MC/Container.hpp>
 #include <future>
 #include <stdexcept>
 
@@ -208,7 +209,7 @@ public :
 		registry->registerOverload<NbtCommand>("nbt", makeMandatory<NbtCommand, NbtCommand::TargetType>(&NbtCommand::targetType, "targettype", &NbtCommand::targetTypeIsSet), makeOptional(&NbtCommand::blockPos, "block", &NbtCommand::blockPosIsSet), makeOptional(&NbtCommand::nbt, "snbt", &NbtCommand::nbtIsSet));
 	}
 };
-
+using json = basic_json<>;
 class NewNbtCmd :public Command
 {
 	CommandSelector<Actor> fromActor;
@@ -217,8 +218,12 @@ class NewNbtCmd :public Command
 	CommandPosition toBlock;
 	string fromPath;
 	string toPath;
+	int fromSolt;
+	CommandSelector<Player> fromItem;
+	int toSolt;
+	CommandSelector<Player> toItem;
 	//json fromJson;
-	bool modeIsSet, fromActorIsSet, toActorIsSet, fromBlockIsSet, toBlockIsSet, fromPathIsSet, toPathIsSet, fromJsonIsSet;
+	bool modeIsSet, fromActorIsSet, toActorIsSet, fromBlockIsSet, toBlockIsSet, fromPathIsSet, toPathIsSet, fromJsonIsSet, fromItemIsSet, fromSoltIsSet, toItemIsSet, toSoltIsSet;
 	static string from(string path)
 	{
 		auto file = asyncFileIn(path);
@@ -247,6 +252,10 @@ class NewNbtCmd :public Command
 		return string(snbt);
 	
 	}*/
+	static string from(std::vector<Player*> players,int solt)
+	{
+		return ((ItemStack&)(players[0]->getInventory().getItem(solt))).getNbt()->toSNBT();
+	}
 	static void to(string snbt, CommandOutput& output, string path)
 	{
 		asyncFileOut(path, snbt, std::ios_base::app);
@@ -268,6 +277,16 @@ class NewNbtCmd :public Command
 		auto nbt = CompoundTag::fromSNBT(snbt);
 		nbt->setBlock(Global<Level>->getBlock(pos, dim));
 	}
+	static void to(string snbt, CommandOutput& output, std::vector<Player*> players, int solt)
+	{
+		int count = 0;
+		for (auto player : players)
+		{
+			player->getInventory().setItem(solt, *ItemStack::create(CompoundTag::fromSNBT(snbt)));
+			count++;
+		}
+		output.success(fmt::to_string(count));
+	}
 public:
 	void execute(CommandOrigin const& ori, CommandOutput& output) const override
 	{
@@ -281,8 +300,8 @@ public:
 			}
 			else if (fromActorIsSet)
 			{
-				auto result = fromActor.results(ori);
-				snbt = from(*result.data);
+				auto results = fromActor.results(ori);
+				snbt = from(*results.data);
 			}
 			else if (fromPathIsSet)
 			{
@@ -291,6 +310,16 @@ public:
 			else if (fromJsonIsSet)
 			{
 				//snbt = from(fromJson);
+			}
+			else if (fromItemIsSet && fromSoltIsSet)
+			{
+				auto results = fromItem.results(ori);
+				snbt = from(*results.data, fromSolt);
+			}
+			else if (fromItemIsSet)
+			{
+				auto results = fromItem.results(ori);
+				snbt = from(*results.data, 0);
 			}
 			else
 			{
@@ -330,12 +359,22 @@ public:
 			}
 			else if (toActorIsSet)
 			{
-				auto result = fromActor.results(ori);
-				to(snbt, output, *result.data);
+				auto results = fromActor.results(ori);
+				to(snbt, output, *results.data);
 			}
 			else if (toPathIsSet)
 			{
 				to(snbt, output, toPath);
+			}
+			else if (toItemIsSet && toSoltIsSet)
+			{
+				auto results = fromItem.results(ori);
+				to(snbt, output, *results.data, toSolt);
+			}
+			else if (toItemIsSet)
+			{
+				auto results = fromItem.results(ori);
+				to(snbt, output, *results.data, 0);
 			}
 			else
 			{
@@ -352,18 +391,31 @@ public:
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromActor, "from", &NewNbtCmd::fromActorIsSet), makeOptional(&NewNbtCmd::toActor, "to", &NewNbtCmd::toActorIsSet));
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromActor, "from", &NewNbtCmd::fromActorIsSet), makeOptional(&NewNbtCmd::toBlock, "to", &NewNbtCmd::toBlockIsSet));
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromActor, "from", &NewNbtCmd::fromActorIsSet), makeOptional(&NewNbtCmd::toPath, "to", &NewNbtCmd::toPathIsSet));
-		
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromActor, "from", &NewNbtCmd::fromActorIsSet), makeOptional(&NewNbtCmd::toSolt, "to", &NewNbtCmd::toSoltIsSet), makeOptional(&NewNbtCmd::toItem, "to", &NewNbtCmd::toItemIsSet));
 
 		//from block
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromBlock, "from", &NewNbtCmd::fromBlockIsSet), makeOptional(&NewNbtCmd::toActor, "to", &NewNbtCmd::toActorIsSet));
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromBlock, "from", &NewNbtCmd::fromBlockIsSet), makeOptional(&NewNbtCmd::toBlock, "to", &NewNbtCmd::toBlockIsSet));
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromBlock, "from", &NewNbtCmd::fromBlockIsSet), makeOptional(&NewNbtCmd::toPath, "to", &NewNbtCmd::toPathIsSet));
-		
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromBlock, "from", &NewNbtCmd::fromBlockIsSet), makeOptional(&NewNbtCmd::toSolt, "to", &NewNbtCmd::toSoltIsSet), makeOptional(&NewNbtCmd::toItem, "to", &NewNbtCmd::toItemIsSet));
 
 		//from path
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromPath, "from", &NewNbtCmd::fromPathIsSet), makeOptional(&NewNbtCmd::toActor, "to", &NewNbtCmd::toActorIsSet));
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromPath, "from", &NewNbtCmd::fromPathIsSet), makeOptional(&NewNbtCmd::toBlock, "to", &NewNbtCmd::toBlockIsSet));
 		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromPath, "from", &NewNbtCmd::fromPathIsSet), makeOptional(&NewNbtCmd::toPath, "to", &NewNbtCmd::toPathIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromPath, "from", &NewNbtCmd::fromPathIsSet), makeOptional(&NewNbtCmd::toSolt, "to", &NewNbtCmd::toSoltIsSet), makeOptional(&NewNbtCmd::toItem, "to", &NewNbtCmd::toItemIsSet));
+
+		//from json
+		//registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromJson, "from", &NewNbtCmd::fromJsonIsSet), makeOptional(&NewNbtCmd::toActor, "to", &NewNbtCmd::toActorIsSet));
+		//registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromJson, "from", &NewNbtCmd::fromJsonIsSet), makeOptional(&NewNbtCmd::toBlock, "to", &NewNbtCmd::toBlockIsSet));
+		//registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromJson, "from", &NewNbtCmd::fromJsonIsSet), makeOptional(&NewNbtCmd::toPath, "to", &NewNbtCmd::toPathIsSet));
+		//registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromJson, "from", &NewNbtCmd::fromJsonIsSet), makeOptional(&NewNbtCmd::toItem, "to", &NewNbtCmd::toItemIsSet), makeOptional(&NewNbtCmd::toSolt, "to", &NewNbtCmd::toSoltIsSet));
+
+		//from item
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromSolt, "from", &NewNbtCmd::fromSoltIsSet), makeOptional(&NewNbtCmd::fromItem, "from", &NewNbtCmd::fromItemIsSet), makeOptional(&NewNbtCmd::toActor, "to", &NewNbtCmd::toActorIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromSolt, "from", &NewNbtCmd::fromSoltIsSet), makeOptional(&NewNbtCmd::fromItem, "from", &NewNbtCmd::fromItemIsSet), makeOptional(&NewNbtCmd::toBlock, "to", &NewNbtCmd::toBlockIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromSolt, "from", &NewNbtCmd::fromSoltIsSet), makeOptional(&NewNbtCmd::fromItem, "from", &NewNbtCmd::fromItemIsSet), makeOptional(&NewNbtCmd::toPath, "to", &NewNbtCmd::toPathIsSet));
+		registry->registerOverload<NewNbtCmd>("nbt", makeOptional(&NewNbtCmd::fromSolt, "from", &NewNbtCmd::fromSoltIsSet), makeOptional(&NewNbtCmd::fromItem, "from", &NewNbtCmd::fromItemIsSet), makeOptional(&NewNbtCmd::toSolt, "to", &NewNbtCmd::toSoltIsSet), makeOptional(&NewNbtCmd::toItem, "to", &NewNbtCmd::toItemIsSet));
 	}
 };
 
@@ -394,6 +446,6 @@ void PluginInit()
 	logger.info("nbtcmd loaded");
     Event::RegCmdEvent::subscribe([](Event::RegCmdEvent regCmdEvent) {
 		NewNbtCmd::setup(regCmdEvent.mCommandRegistry);
-		return true;
+		return true; 
 		});
 }
