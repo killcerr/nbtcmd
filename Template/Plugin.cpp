@@ -79,6 +79,40 @@ auto asyncFileIn(const string path)
 		}, path);
 	return result;
 }
+enum Mode : int
+{
+	book = 0x0,
+	commandOutPut = 0x1,
+	consle = 0x2
+};
+Mode outPutMode;
+class SetDefaultOutPutMode : public Command
+{
+public:
+	Mode mode;
+	bool modeIsSet;
+	void execute(CommandOrigin const& ori, CommandOutput& output) const override
+	{
+		if (modeIsSet)
+		{
+			outPutMode = mode;
+			output.success();
+		}
+		else
+		{
+			output.error("commands.stats.failed");
+			return;
+		}
+	}
+	static void setup(CommandRegistry* registry)
+	{
+		using namespace RegisterCommandHelper;
+		registry->addEnum<Mode>("mode", { {"book",Mode::book} ,{"commandOutPut",Mode::commandOutPut} ,{"consle",Mode::consle} });
+		registry->registerCommand("setdefaultoutputmode", "set default output mode", Any, { (CommandFlagValue)0 }, { (CommandFlagValue)0x80 });
+		registry->registerOverload<SetDefaultOutPutMode>("setdefaultoutputmode", makeMandatory<SetDefaultOutPutMode, Mode>(&SetDefaultOutPutMode::mode, "mode", &SetDefaultOutPutMode::modeIsSet));
+
+	}
+};
 class NbtCommand : public Command
 {
 	CommandSelector<Actor> selector; 
@@ -378,7 +412,38 @@ public:
 			}
 			else
 			{
-				output.success(snbt);
+				switch (outPutMode)
+				{
+				case Mode::book:
+					{
+						if (ori.getPlayer()->isPlayer())
+						{
+							string result = "{\"Count\":1b,\"Damage\":0s,\"Name\":\"minecraft:writable_book\",\"WasPickedUp\":0b,\"tag\":{\"pages\":[{\"photoname\":\"\",\"text\":\"" + snbt + "\"},{\"photoname\":\"\",\"text\":\"\"}]}}";
+							auto book = ItemStack::fromTag(*CompoundTag::fromSNBT(result).get());
+							ori.getPlayer()->add(book);
+						}
+						else
+						{
+							output.error("not player");
+						}
+						break;
+					}
+					case Mode::commandOutPut:
+					{
+						output.success(snbt);
+						break;
+					}
+					case Mode::consle:
+					{
+						logger.info(snbt);
+						break;
+					}
+					default:
+					{
+						logger.error("unkown output mode");
+						break;
+					}
+				}
 			}
 			
 		}
@@ -421,8 +486,8 @@ public:
 
 class SNbtSyntaxHighlightingCommand : public Command
 {
-	std::string syntaxHighlightingMode;
-	bool syntaxHighlightingModeIsSet;
+	std::string snbt,mode;
+	bool snbtIsSet, modeIsSet;
 public:
 	void execute(CommandOrigin const& ori, CommandOutput& output) const override
 	{
@@ -432,9 +497,10 @@ public:
 	{
 		using namespace RegisterCommandHelper;
 		registry->registerCommand("snbtsyntaxhighlighting", "snbt syntaxh highlighting", CommandPermissionLevel::Any, { (CommandFlagValue)0 }, { (CommandFlagValue)0x80 });
-		registry->registerOverload<SNbtSyntaxHighlightingCommand>("snbtsyntaxhighlighting", makeOptional<SNbtSyntaxHighlightingCommand>(&SNbtSyntaxHighlightingCommand::syntaxHighlightingMode, "syntaxhighlightingmode", &SNbtSyntaxHighlightingCommand::syntaxHighlightingModeIsSet));
+		registry->registerOverload<SNbtSyntaxHighlightingCommand>("snbtsyntaxhighlighting", makeOptional<SNbtSyntaxHighlightingCommand>(&SNbtSyntaxHighlightingCommand::snbt, "syntaxhighlightingmode", &SNbtSyntaxHighlightingCommand::snbtIsSet));
 	}
 };
+
 
 void PluginInit()
 {
@@ -447,5 +513,9 @@ void PluginInit()
     Event::RegCmdEvent::subscribe([](Event::RegCmdEvent regCmdEvent) {
 		NewNbtCmd::setup(regCmdEvent.mCommandRegistry);
 		return true; 
+		});
+	Event::RegCmdEvent::subscribe([](Event::RegCmdEvent regCmdEvent) {
+		SetDefaultOutPutMode::setup(regCmdEvent.mCommandRegistry);
+		return true;
 		});
 }
